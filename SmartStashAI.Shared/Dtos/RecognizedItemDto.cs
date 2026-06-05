@@ -1,4 +1,4 @@
-﻿namespace SmartStashAI.Api.Dtos;
+﻿namespace SmartStashAI.Shared.Dtos;
 
 public class RecognizedItemDto
 {

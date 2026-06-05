@@ -6,11 +6,16 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartStashAI.Api", "SmartStashAI.Api\SmartStashAI.Api.csproj", "{A99CEE67-AB5E-461C-8B64-F3622CDBFD9D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartStashAI.Client", "SmartStashAI.Client\SmartStashAI.Client.csproj", "{A9B12B42-ADD3-49B2-9402-749397D8C934}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A99CEE67-AB5E-461C-8B64-F3622CDBFD9D} = {A99CEE67-AB5E-461C-8B64-F3622CDBFD9D}
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
 		README.md = README.md
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartStashAI.Shared", "SmartStashAI.Shared\SmartStashAI.Shared.csproj", "{458B3D82-48A3-4EC0-A9FE-1040B251F2C4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +31,10 @@ Global
 		{A9B12B42-ADD3-49B2-9402-749397D8C934}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A9B12B42-ADD3-49B2-9402-749397D8C934}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A9B12B42-ADD3-49B2-9402-749397D8C934}.Release|Any CPU.Build.0 = Release|Any CPU
+		{458B3D82-48A3-4EC0-A9FE-1040B251F2C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{458B3D82-48A3-4EC0-A9FE-1040B251F2C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{458B3D82-48A3-4EC0-A9FE-1040B251F2C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{458B3D82-48A3-4EC0-A9FE-1040B251F2C4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,5 +1,4 @@
-﻿namespace SmartStashAI.Api.Dtos;
-
+﻿namespace SmartStashAI.Shared.Dtos;
 public class RegisterRequestDto
 {
     public string Username { get; set; } = string.Empty;

@@ -1,9 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartStashAI.Api.Data;
-using SmartStashAI.Api.Dtos;
 using SmartStashAI.Api.Models;
 using SmartStashAI.Api.Services;
+using SmartStashAI.Shared.Dtos;
 
 namespace SmartStashAI.Api.Controllers;
 

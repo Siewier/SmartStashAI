@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QRCoder;
 using SmartStashAI.Api.Data;
-using SmartStashAI.Api.Dtos;
 using SmartStashAI.Api.Models;
+using SmartStashAI.Shared.Dtos;
 using System.Security.Claims;
 
 namespace SmartStashAI.Api.Controllers;
@@ -30,31 +30,34 @@ public class StorageLocationsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<StorageLocationResponseDto>> CreateLocation([FromBody] CreateLocationDto dto)
+    public async Task<ActionResult<StorageLocationResponseDto>> CreateLocation(CreateLocationDto dto)
     {
+        // 1. Pobierz ID gospodarstwa domowego zalogowanego użytkownika
         int householdId = GetUserHouseholdId();
-
-        // Generujemy unikalny token dla kodu QR (np. STASH_GUID)
-        string qrToken = $"STASH_{Guid.NewGuid().ToString("N").Substring(0, 12).ToUpper()}";
 
         var location = new StorageLocation
         {
             Name = dto.Name,
-            QrCodeToken = qrToken,
-            HouseholdId = householdId,
-            ParentLocationId = dto.ParentLocationId
+            ParentLocationId = dto.ParentLocationId == 0 ? null : dto.ParentLocationId,
+            QrCodeToken = "STASH_" + Guid.NewGuid().ToString().Replace("-", "").Substring(0, 12).ToUpper(),
+            HouseholdId = householdId // <-- KLUCZOWA POPRAWKA: Przypisanie do aktualnego domu
         };
 
         _context.StorageLocations.Add(location);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetLocationByQr), new { qrToken = location.QrCodeToken }, new StorageLocationResponseDto
+        // Mapowanie na obiekt odpowiedzi
+        var responseDto = new StorageLocationResponseDto
         {
             Id = location.Id,
             Name = location.Name,
             QrCodeToken = location.QrCodeToken,
-            ParentLocationId = location.ParentLocationId
-        });
+            ParentLocationId = location.ParentLocationId,
+            Items = new List<ItemResponseDto>(),
+            ChildLocations = new List<StorageLocationResponseDto>()
+        };
+
+        return CreatedAtAction(nameof(CreateLocation), new { id = location.Id }, responseDto);
     }
 
     // Wyszukiwanie lokalizacji i jej zawartości na podstawie zeskanowanego kodu QR (Opcja Wyszukiwania 1)
@@ -125,5 +128,45 @@ public class StorageLocationsController : ControllerBase
         byte[] qrCodeAsPngByteArr = ppngByteQrCode.GetGraphic(20); // Liczba określa wielkość/piksele na moduł
 
         return File(qrCodeAsPngByteArr, "image/png");
+    }
+
+    [HttpGet("all")]
+    public async Task<ActionResult<List<StorageLocationResponseDto>>> GetAllRootLocations()
+    {
+        int householdId = GetUserHouseholdId();
+
+        // Pobieramy szafy najwyższego poziomu (ParentLocationId == null) 
+        // i JAWNIE dołączamy podlokalizacje (ChildLocations) oraz przedmioty (Items)
+        var rootLocations = await _context.StorageLocations
+            .Include(l => l.Items)
+            .Include(l => l.ChildLocations)
+                .ThenInclude(cl => cl.Items)
+            .Include(l => l.ChildLocations)
+                .ThenInclude(cl => cl.ChildLocations) // Wsparcie dla 3 poziomu (np. Szafa -> Szuflada -> Organizer)
+            .Where(l => l.ParentLocationId == null && l.HouseholdId == householdId)
+            .ToListAsync();
+
+        var response = rootLocations.Select(l => MapToDto(l)).ToList();
+        return Ok(response);
+    }
+
+    private static StorageLocationResponseDto MapToDto(StorageLocation loc)
+    {
+        return new StorageLocationResponseDto
+        {
+            Id = loc.Id,
+            Name = loc.Name,
+            QrCodeToken = loc.QrCodeToken,
+            ParentLocationId = loc.ParentLocationId,
+            Items = loc.Items?.Select(i => new ItemResponseDto
+            {
+                Id = i.Id,
+                Name = i.Name,
+                Category = i.Category,
+                Purpose = i.Purpose,
+                IsLost = i.IsLost
+            }).ToList() ?? new List<ItemResponseDto>(),
+            ChildLocations = loc.ChildLocations?.Select(cl => MapToDto(cl)).ToList() ?? new List<StorageLocationResponseDto>()
+        };
     }
 }

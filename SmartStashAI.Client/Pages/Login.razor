@@ -1,0 +1,207 @@
+﻿@page "/login"
+@inject HttpClient Http
+@inject JwtAuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<div class="container d-flex justify-content-center align-items-center" style="min-height: 80vh;">
+    <div class="card shadow-sm p-4" style="width: 100%; max-width: 450px; border-radius: 12px;">
+        <div class="text-center mb-4">
+            <h3 class="fw-bold text-primary">SmartStashAI</h3>
+            <p class="text-muted small">Inteligentne zarządzanie domowym magazynem</p>
+        </div>
+
+        <ul class="nav nav-pills nav-justified mb-4" id="pills-tab" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == Tab.Login ? "active" : "")" @onclick="() => ChangeTab(Tab.Login)">Logowanie</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == Tab.Register ? "active" : "")" @onclick="() => ChangeTab(Tab.Register)">Nowy Dom</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == Tab.Join ? "active" : "")" @onclick="() => ChangeTab(Tab.Join)">Dołącz</button>
+            </li>
+        </ul>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger small py-2 text-center" role="alert">
+                @errorMessage
+            </div>
+        }
+
+        @if (activeTab == Tab.Login)
+        {
+            <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Nazwa użytkownika</label>
+                    <InputText @bind-Value="loginModel.Username" class="form-control" placeholder="np. przemek" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Hasło</label>
+                    <InputText @bind-Value="loginModel.Password" type="password" class="form-control" placeholder="••••••••" />
+                </div>
+                <button type="submit" class="btn btn-primary w-100 mt-2" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                    }
+                    Zaloguj się
+                </button>
+            </EditForm>
+        }
+
+        @if (activeTab == Tab.Register)
+        {
+            <EditForm Model="registerModel" OnValidSubmit="HandleRegister">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Nazwa użytkownika</label>
+                    <InputText @bind-Value="registerModel.Username" class="form-control" placeholder="np. jan_kowalski" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Hasło</label>
+                    <InputText @bind-Value="registerModel.Password" type="password" class="form-control" placeholder="••••••••" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Nazwa Twojego Gospodarstwa (Domu)</label>
+                    <InputText @bind-Value="registerModel.HouseholdName" class="form-control" placeholder="np. Garaż i Dom Łódź" />
+                </div>
+                <button type="submit" class="btn btn-success w-100 mt-2" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                    }
+                    Zarejestruj i załóż dom
+                </button>
+            </EditForm>
+        }
+
+        @if (activeTab == Tab.Join)
+        {
+            <EditForm Model="joinModel" OnValidSubmit="HandleJoin">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Nazwa użytkownika</label>
+                    <InputText @bind-Value="joinModel.Username" class="form-control" placeholder="np. anna_kowalska" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Hasło</label>
+                    <InputText @bind-Value="joinModel.Password" type="password" class="form-control" placeholder="••••••••" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ID Gospodarstwa Domowego (od rodziny)</label>
+                    <InputNumber @bind-Value="joinModel.HouseholdIdToJoin" class="form-control" placeholder="np. 1" />
+                </div>
+                <button type="submit" class="btn btn-info text-white w-100 mt-2" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                    }
+                    Dołącz do gospodarstwa
+                </button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    private enum Tab { Login, Register, Join }
+    private Tab activeTab = Tab.Login;
+    private bool isSubmitting = false;
+    private string? errorMessage;
+
+    private LoginRequestDto loginModel = new();
+    private RegisterRequestDto registerModel = new();
+    private JoinHouseholdRequestDto joinModel = new();
+
+    private void ChangeTab(Tab tab)
+    {
+        activeTab = tab;
+        errorMessage = null;
+    }
+
+    private async Task HandleLogin()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/Auth/login", loginModel);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+                if (result != null)
+                {
+                    await AuthStateProvider.MarkUserAsAuthenticated(result.Token);
+                    Navigation.NavigateTo("/");
+                }
+            }
+            else
+            {
+                errorMessage = await response.Content.ReadAsStringAsync();
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "Błąd połączenia z serwerem API.";
+        }
+        finally { isSubmitting = false; }
+    }
+
+    private async Task HandleRegister()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/Auth/register", registerModel);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+                if (result != null)
+                {
+                    await AuthStateProvider.MarkUserAsAuthenticated(result.Token);
+                    Navigation.NavigateTo("/");
+                }
+            }
+            else
+            {
+                errorMessage = await response.Content.ReadAsStringAsync();
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "Błąd połączenia z serwerem API.";
+        }
+        finally { isSubmitting = false; }
+    }
+
+    private async Task HandleJoin()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/Auth/join", joinModel);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+                if (result != null)
+                {
+                    await AuthStateProvider.MarkUserAsAuthenticated(result.Token);
+                    Navigation.NavigateTo("/");
+                }
+            }
+            else
+            {
+                errorMessage = await response.Content.ReadAsStringAsync();
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "Błąd połączenia z serwerem API.";
+        }
+        finally { isSubmitting = false; }
+    }
+}

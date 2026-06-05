@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
-using SmartStashAI.Api.Dtos;
+using SmartStashAI.Shared.Dtos;
 using System.Text.Json;
 
 namespace SmartStashAI.Api.Controllers;

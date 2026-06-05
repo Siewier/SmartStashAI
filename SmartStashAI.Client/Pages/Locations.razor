@@ -1,0 +1,171 @@
+﻿@page "/locations"
+@using Microsoft.AspNetCore.Authorization
+@using SmartStashAI.Shared.Dtos
+@inject HttpClient Http
+@attribute [Authorize]
+
+<div class="container mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-primary mb-0"><i class="bi bi-diagram-3-fill me-2"></i>Moje Schowki</h2>
+            <p class="text-muted small mb-0">Zarządzaj strukturą szaf, regałów i szuflad w Twoim domu</p>
+        </div>
+        <button class="btn btn-primary shadow-sm" @onclick="() => OpenAddModal(null)">
+            <i class="bi bi-plus-circle me-1"></i> Nowa główna szafa
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center my-5">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+            <p class="text-muted mt-2">Wczytywanie struktury pomieszczeń...</p>
+        </div>
+    }
+    else if (rootLocations == null || !rootLocations.Any())
+    {
+        <div class="alert alert-info p-5 text-center shadow-sm rounded border" role="alert">
+            <i class="bi bi-box-seam text-secondary display-4 d-block mb-3"></i>
+            <h4 class="fw-bold">Brak zarejestrowanych schowków</h4>
+            <p class="text-muted">Nie utworzyłeś jeszcze żadnego miejsca do przechowywania przedmiotów.</p>
+            <button class="btn btn-primary mt-2" @onclick="() => OpenAddModal(null)">Stwórz pierwszy kontener</button>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
+            @foreach (var loc in rootLocations)
+            {
+                <LocationTreeNode Location="loc" OnAddChild="OpenAddModal" OnShowQr="OpenQrModal" />
+            }
+        </div>
+    }
+</div>
+
+@if (showAddModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-folder-plus me-2"></i>
+                        @(newLocationModel.ParentLocationId.HasValue ? "Dodaj podlokalizację (szufladę)" : "Dodaj główną lokalizację")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAddModal"></button>
+                </div>
+                <EditForm Model="newLocationModel" OnValidSubmit="HandleCreateLocation">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Nazwa schowka / szafki</label>
+                            <InputText @bind-Value="newLocationModel.Name" class="form-control" placeholder="np. Szafka narzędziowa, Regał A, Garaż" />
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseAddModal">Anuluj</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSubmitting">Zapisz schowek</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showQrModal && selectedLocation != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h6 class="modal-title fw-bold text-truncate">Kod QR: @selectedLocation.Name</h6>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseQrModal"></button>
+                </div>
+                <div class="modal-body text-center p-4">
+                    <img src="https://localhost:7047/api/StorageLocations/@(selectedLocation.Id)/qr-image" class="img-fluid border p-2 rounded bg-white shadow-sm mb-3" style="max-height: 200px;" alt="Kod QR" />
+                    <div class="bg-light p-2 rounded font-monospace style-all small text-secondary">
+                        @selectedLocation.QrCodeToken
+                    </div>
+                </div>
+                <div class="modal-footer bg-light p-2 d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-secondary" @onclick="CloseQrModal">Zamknij</button>
+                    <a href="https://localhost:7047/api/StorageLocations/@(selectedLocation.Id)/qr-image" download="QR_@selectedLocation.Name" target="_blank" class="btn btn-sm btn-success">
+                        <i class="bi bi-download me-1"></i> Pobierz PNG
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<StorageLocationResponseDto>? rootLocations;
+    private bool isLoading = true;
+    private bool showAddModal = false;
+    private bool showQrModal = false;
+    private bool isSubmitting = false;
+
+    private CreateLocationDto newLocationModel = new();
+    private StorageLocationResponseDto? selectedLocation;
+
+    protected override async Task OnInitializedAsync() => await LoadLocations();
+
+    private async Task LoadLocations()
+    {
+        isLoading = true;
+        try
+        {
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = null // Dopasowanie do konfiguracji API
+            };
+
+            var response = await Http.GetFromJsonAsync<List<StorageLocationResponseDto>>("api/StorageLocations/all", options);
+            if (response != null)
+            {
+                rootLocations = response;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd: {ex.Message}");
+            rootLocations = new List<StorageLocationResponseDto>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OpenAddModal(int? parentId)
+    {
+        newLocationModel = new CreateLocationDto { ParentLocationId = parentId };
+        showAddModal = true;
+    }
+
+    private void CloseAddModal() => showAddModal = false;
+
+    private void OpenQrModal(StorageLocationResponseDto loc)
+    {
+        selectedLocation = loc;
+        showQrModal = true;
+    }
+
+    private void CloseQrModal() => showQrModal = false;
+
+    private async Task HandleCreateLocation()
+    {
+        isSubmitting = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/StorageLocations", newLocationModel);
+            if (response.IsSuccessStatusCode)
+            {
+                showAddModal = false;
+                await LoadLocations();
+            }
+        }
+        catch (Exception) { }
+        finally { isSubmitting = false; }
+    }
+}

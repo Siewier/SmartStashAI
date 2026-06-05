@@ -9,7 +9,10 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Rejestracja bazy i us³ug AI/Auth
+// =========================================================================
+// 1. REJESTRACJA US£UG (DI CONTAINER)
+// =========================================================================
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=smartstash.db"));
 
@@ -17,6 +20,17 @@ builder.Services.AddSingleton<IChatClient>(sp =>
     new OllamaApiClient(new Uri("http://localhost:11434"), "llama3.2-vision:11b"));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+
+// KROK KLUCZOWY: Rejestracja polityki CORS dopuszczaj¹cej komunikacjê z Blazorem
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("BlazorClientPolicy", policy =>
+    {
+        policy.AllowAnyOrigin()   // Zezwala na dowolny port klienta (np. 7212, 5254)
+              .AllowAnyMethod()   // Zezwala na metody POST, GET, PUT, DELETE
+              .AllowAnyHeader();  // Zezwala na wszystkie nag³ówki (w tym Bearer token)
+    });
+});
 
 // 2. Konfiguracja zabezpieczeñ JWT
 var secretKey = builder.Configuration["Jwt:Secret"] ?? "SuperTajnyKluczDoSmartStashAI2026!TrzymajGoWBezpiecznymMiejscu";
@@ -41,7 +55,12 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Wy³¹cza domyœlne zamienianie wielkich liter na camelCase w odpowiedziach JSON z API
+        options.JsonSerializerOptions.PropertyNamingPolicy = null;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -62,16 +81,20 @@ builder.Services.AddSwaggerGen(c =>
         {
             new Microsoft.OpenApi.Models.OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
+Reference = new Microsoft.OpenApi.Models.OpenApiReference
+{
+    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, 
+    Id = "Bearer"
+}
             },
             Array.Empty<string>()
         }
     });
 });
+
+// =========================================================================
+// 2. POTOK PRZETWARZANIA ¯¥DAÑ (MIDDLEWARE PIPELINE)
+// =========================================================================
 
 var app = builder.Build();
 
@@ -80,7 +103,10 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-// 3. WA¯NE: W³¹czenie middleware autentykacji (musi byæ PRZED UseAuthorization)
+// KROK KLUCZOWY: Wstrzykniêcie polityki CORS. 
+// MUSI znajdowaæ siê przed UseAuthentication i UseAuthorization!
+app.UseCors("BlazorClientPolicy");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
