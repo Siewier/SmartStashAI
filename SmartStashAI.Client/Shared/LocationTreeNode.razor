@@ -2,7 +2,7 @@
 @inject HttpClient Http
 
 <div class="ms-3 my-2 border-start ps-3 border-secondary border-opacity-25">
-    <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded shadow-sm border mb-1">
+    <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded shadow-sm border mb-1 flex-wrap gap-2">
         <div @onclick="ToggleExpand" style="cursor: pointer;" class="d-flex align-items-center flex-grow-1">
             <i class="bi @(hasChildren ? (isExpanded ? "bi-chevron-down text-primary" : "bi-chevron-right text-muted") : "bi-dot text-secondary") me-2 fs-5"></i>
             <i class="bi bi-box-seam text-warning me-2"></i>
@@ -10,21 +10,21 @@
             <span class="badge bg-secondary ms-2 small">ID: @Location.Id</span>
         </div>
 
-        <div class="d-flex gap-1">
-            <button class="btn btn-sm btn-outline-success py-0 px-2" @onclick="() => OnAddItem.InvokeAsync(Location.Id)" title="Dodaj przedmiot do tego schowka">
-                <i class="bi bi-box-arrow-in-down"></i> <span class="d-none d-sm-inline">Przedmiot</span>
+        <div class="d-flex gap-1 flex-wrap">
+            <button class="btn btn-sm btn-outline-success" @onclick="() => OnAddItem.InvokeAsync(Location.Id)" title="Dodaj przedmiot do tego schowka">
+                <i class="bi bi-box-arrow-in-down"></i> <span class="d-none d-md-inline ms-1">Przedmiot</span>
             </button>
 
-            <button class="btn btn-sm btn-outline-primary py-0 px-2" @onclick="() => OnAddChild.InvokeAsync(Location.Id)" title="Dodaj podlokalizację">
-                <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Szuflada</span>
+            <button class="btn btn-sm btn-outline-primary" @onclick="() => OnAddChild.InvokeAsync(Location.Id)" title="Dodaj podlokalizację">
+                <i class="bi bi-plus-lg"></i> <span class="d-none d-md-inline ms-1">Szuflada</span>
             </button>
 
-            <button class="btn btn-sm btn-outline-dark py-0 px-2" @onclick="ShowQrModal" title="Pokaż kod QR">
-                <i class="bi bi-qr-code"></i>
+            <button class="btn btn-sm btn-outline-dark" @onclick="ShowQrModal" title="Pokaż kod QR">
+                <i class="bi bi-qr-code"></i> <span class="d-none d-md-inline ms-1">Kod QR</span>
             </button>
 
-            <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => OnDelete.InvokeAsync(Location.Id)" title="Usuń schowek">
-                <i class="bi bi-trash"></i>
+            <button class="btn btn-sm btn-outline-danger" @onclick="() => OnDelete.InvokeAsync(Location.Id)" title="Usuń schowek">
+                <i class="bi bi-trash"></i> <span class="d-none d-md-inline ms-1">Usuń</span>
             </button>
         </div>
     </div>
@@ -32,12 +32,13 @@
     @if (Location.Items != null && Location.Items.Any() && isExpanded)
     {
         <div class="ms-4 my-1 table-responsive">
-            <table class="table table-sm table-hover border rounded bg-white mb-2" style="font-size: 0.875rem;">
+            <table class="table table-sm table-hover align-middle border rounded bg-white mb-2" style="font-size: 0.875rem;">
                 <thead class="table-dark">
                     <tr>
                         <th>Nazwa przedmiotu</th>
                         <th>Kategoria</th>
                         <th>Status</th>
+                        <th class="text-end" style="min-width: 220px;">Akcje</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -56,6 +57,16 @@
                                     <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Na miejscu</span>
                                 }
                             </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-warning me-1" @onclick="() => OnToggleItemStatus.InvokeAsync(item)" title="@(item.IsLost ? "Oznacz jako znaleziony" : "Oznacz jako zgubiony")">
+                                    <i class="bi @(item.IsLost ? "bi-eye" : "bi-eye-slash")"></i>
+                                    <span class="d-none d-sm-inline ms-1 text-dark">@(item.IsLost ? "Znaleziony" : "Zgubiony")</span>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => OnDeleteItem.InvokeAsync(item.Id)" title="Usuń przedmiot">
+                                    <i class="bi bi-trash"></i>
+                                    <span class="d-none d-sm-inline ms-1">Usuń</span>
+                                </button>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -67,7 +78,13 @@
     {
         @foreach (var child in Location.ChildLocations)
         {
-            <LocationTreeNode Location="child" OnAddChild="OnAddChild" OnShowQr="OnShowQr" OnDelete="OnDelete" OnAddItem="OnAddItem" />
+            <LocationTreeNode Location="child"
+                              OnAddChild="OnAddChild"
+                              OnShowQr="OnShowQr"
+                              OnDelete="OnDelete"
+                              OnAddItem="OnAddItem"
+                              OnDeleteItem="OnDeleteItem"
+                              OnToggleItemStatus="OnToggleItemStatus" />
         }
     }
 </div>
@@ -78,6 +95,9 @@
     [Parameter] public EventCallback<StorageLocationResponseDto> OnShowQr { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
     [Parameter] public EventCallback<int> OnAddItem { get; set; }
+
+    [Parameter] public EventCallback<int> OnDeleteItem { get; set; }
+    [Parameter] public EventCallback<ItemResponseDto> OnToggleItemStatus { get; set; }
 
     private bool isExpanded = true;
     private bool hasChildren => Location.ChildLocations != null && Location.ChildLocations.Any();

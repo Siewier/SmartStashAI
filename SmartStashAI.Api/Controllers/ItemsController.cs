@@ -33,7 +33,6 @@ public class ItemsController : ControllerBase
     {
         int householdId = GetUserHouseholdId();
 
-        // Upewniamy się, że docelowa lokalizacja istnieje i należy do tego samego domu
         var location = await _context.StorageLocations
             .FirstOrDefaultAsync(l => l.Id == dto.StorageLocationId && l.HouseholdId == householdId);
 
@@ -72,7 +71,6 @@ public class ItemsController : ControllerBase
     {
         int householdId = GetUserHouseholdId();
 
-        // Szukamy przedmiotu dbając o to, by należał do szafki powiązanej z domem użytkownika
         var item = await _context.Items
             .Include(i => i.StorageLocation)
             .FirstOrDefaultAsync(i => i.Id == id && i.StorageLocation.HouseholdId == householdId);
@@ -88,7 +86,7 @@ public class ItemsController : ControllerBase
         return NoContent();
     }
 
-    // 3. WYSZUKIWANIE PRZEDMIOTU (Wyszukiwanie opcja druga)
+    // 3. WYSZUKIWANIE PRZEDMIOTU
     [HttpGet("search")]
     public async Task<ActionResult<List<FullItemResponseDto>>> SearchItems([FromQuery] string query)
     {
@@ -99,7 +97,6 @@ public class ItemsController : ControllerBase
             return BadRequest("Zapytanie wyszukiwania nie może być puste.");
         }
 
-        // Pobieramy przedmioty pasujące do frazy z uwzględnieniem HouseholdId
         var items = await _context.Items
             .Include(i => i.StorageLocation)
             .Where(i => i.StorageLocation.HouseholdId == householdId &&
@@ -112,7 +109,6 @@ public class ItemsController : ControllerBase
 
         foreach (var item in items)
         {
-            // Budujemy pełną ścieżkę lokalizacji (np. "Piwnica -> Regał A -> Szuflada 1")
             var pathParts = new List<string> { item.StorageLocation.Name };
             var currentParentId = item.StorageLocation.ParentLocationId;
 
@@ -144,5 +140,26 @@ public class ItemsController : ControllerBase
         }
 
         return Ok(response);
+    }
+
+    // 4. NOWA METODA: USUWANIE PRZEDMIOTU
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteItem(int id)
+    {
+        int householdId = GetUserHouseholdId();
+
+        var item = await _context.Items
+            .Include(i => i.StorageLocation)
+            .FirstOrDefaultAsync(i => i.Id == id && i.StorageLocation.HouseholdId == householdId);
+
+        if (item == null)
+        {
+            return NotFound("Nie znaleziono przedmiotu do usunięcia.");
+        }
+
+        _context.Items.Remove(item);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
     }
 }

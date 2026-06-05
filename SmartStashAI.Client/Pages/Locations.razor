@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using SmartStashAI.Shared.Dtos
 @using System.Text.Json
+@using System.Net.Http.Json
 @using SmartStashAI.Client.Shared
 @inject HttpClient Http
 @inject IJSRuntime JS
@@ -39,7 +40,13 @@
         <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
             @foreach (var loc in rootLocations)
             {
-                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" OnDelete="HandleDeleteLocation" OnAddItem="OpenAddItemModal" />
+                <LocationTreeNode Location="loc"
+                                  OnAddChild="@(id => OpenAddModal(id))"
+                                  OnShowQr="OpenQrModal"
+                                  OnDelete="HandleDeleteLocation"
+                                  OnAddItem="OpenAddItemModal"
+                                  OnDeleteItem="HandleDeleteItem"
+                                  OnToggleItemStatus="HandleToggleItemStatus" />
             }
         </div>
     }
@@ -277,6 +284,47 @@
         {
             isSubmittingItem = false;
             StateHasChanged();
+        }
+    }
+
+    // --- NOWE METODY DLA PRZEDMIOTÓW: Zmiana statusu i Kasowanie ---
+
+    private async Task HandleToggleItemStatus(ItemResponseDto item)
+    {
+        try
+        {
+            var dto = new UpdateItemStatusDto { IsLost = !item.IsLost };
+            var response = await Http.PatchAsJsonAsync($"api/Items/{item.Id}/status", dto);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadLocations();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd podczas zmiany statusu: {ex.Message}");
+        }
+    }
+
+    private async Task HandleDeleteItem(int itemId)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Czy na pewno chcesz bezpowrotnie usunąć ten przedmiot?");
+
+        if (!confirmed) return;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/Items/{itemId}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadLocations();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd podczas usuwania przedmiotu: {ex.Message}");
         }
     }
 }
