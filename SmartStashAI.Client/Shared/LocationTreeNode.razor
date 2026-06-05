@@ -5,18 +5,24 @@
     <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded shadow-sm border mb-1">
         <div @onclick="ToggleExpand" style="cursor: pointer;" class="d-flex align-items-center flex-grow-1">
             <i class="bi @(hasChildren ? (isExpanded ? "bi-chevron-down text-primary" : "bi-chevron-right text-muted") : "bi-dot text-secondary") me-2 fs-5"></i>
-            <i class="bi bi-box-seam text-warning Jak me-2"></i>
+            <i class="bi bi-box-seam text-warning me-2"></i>
             <span class="fw-bold text-dark">@Location.Name</span>
             <span class="badge bg-secondary ms-2 small">ID: @Location.Id</span>
         </div>
 
         <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-outline-success py-0 px-2" @onclick="() => OnAddItem.InvokeAsync(Location.Id)" title="Dodaj przedmiot do tego schowka">
+                <i class="bi bi-box-arrow-in-down"></i> <span class="d-none d-sm-inline">Przedmiot</span>
+            </button>
+
             <button class="btn btn-sm btn-outline-primary py-0 px-2" @onclick="() => OnAddChild.InvokeAsync(Location.Id)" title="Dodaj podlokalizację">
                 <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Szuflada</span>
             </button>
+
             <button class="btn btn-sm btn-outline-dark py-0 px-2" @onclick="ShowQrModal" title="Pokaż kod QR">
                 <i class="bi bi-qr-code"></i>
             </button>
+
             <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => OnDelete.InvokeAsync(Location.Id)" title="Usuń schowek">
                 <i class="bi bi-trash"></i>
             </button>
@@ -61,7 +67,7 @@
     {
         @foreach (var child in Location.ChildLocations)
         {
-            <LocationTreeNode Location="child" OnAddChild="OnAddChild" OnShowQr="OnShowQr" OnDelete="OnDelete" />
+            <LocationTreeNode Location="child" OnAddChild="OnAddChild" OnShowQr="OnShowQr" OnDelete="OnDelete" OnAddItem="OnAddItem" />
         }
     }
 </div>
@@ -71,6 +77,7 @@
     [Parameter] public EventCallback<int> OnAddChild { get; set; }
     [Parameter] public EventCallback<StorageLocationResponseDto> OnShowQr { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnAddItem { get; set; }
 
     private bool isExpanded = true;
     private bool hasChildren => Location.ChildLocations != null && Location.ChildLocations.Any();

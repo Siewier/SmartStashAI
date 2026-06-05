@@ -39,7 +39,7 @@
         <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
             @foreach (var loc in rootLocations)
             {
-                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" OnDelete="HandleDeleteLocation" />
+                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" OnDelete="HandleDeleteLocation" OnAddItem="OpenAddItemModal" />
             }
         </div>
     }
@@ -67,6 +67,42 @@
                     <div class="modal-footer bg-light">
                         <button type="button" class="btn btn-secondary" @onclick="CloseAddModal">Anuluj</button>
                         <button type="submit" class="btn btn-primary" disabled="@isSubmitting">Zapisz schowek</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showAddItemModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-box-arrow-in-down me-2"></i> Dodaj przedmiot do schowka
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAddItemModal"></button>
+                </div>
+                <EditForm Model="newItemModel" OnValidSubmit="HandleCreateItem">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Nazwa przedmiotu</label>
+                            <InputText @bind-Value="newItemModel.Name" class="form-control" placeholder="np. Wiertarka, Kable USB" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Kategoria</label>
+                            <InputText @bind-Value="newItemModel.Category" class="form-control" placeholder="np. Narzędzia, Elektronika" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Przeznaczenie (opcjonalnie)</label>
+                            <InputText @bind-Value="newItemModel.Purpose" class="form-control" placeholder="np. Do remontu" />
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseAddItemModal">Anuluj</button>
+                        <button type="submit" class="btn btn-success" disabled="@isSubmittingItem">Zapisz przedmiot</button>
                     </div>
                 </EditForm>
             </div>
@@ -110,6 +146,11 @@
     private CreateLocationDto newLocationModel = new();
     private StorageLocationResponseDto? selectedLocation;
 
+    // --- Zmienne dla przedmiotów ---
+    private bool showAddItemModal = false;
+    private bool isSubmittingItem = false;
+    private CreateItemDto newItemModel = new();
+
     protected override async Task OnInitializedAsync() => await LoadLocations();
 
     private async Task LoadLocations()
@@ -122,11 +163,9 @@
                 PropertyNameCaseInsensitive = true,
                 PropertyNamingPolicy = null
             };
-            
-            // Pobieranie jako string i jawna deserializacja działa najstabilniej w Twoim środowisku
+
             var rawJson = await Http.GetStringAsync("api/StorageLocations");
             rootLocations = JsonSerializer.Deserialize<List<StorageLocationResponseDto>>(rawJson, options);
-            Console.WriteLine($"Zdeserializowano obiektów: {rootLocations?.Count ?? 0}");
         }
         catch (Exception ex)
         {
@@ -136,8 +175,7 @@
         finally
         {
             isLoading = false;
-            // Bardzo ważne w Blazorze: jawnie informujemy framework, że należy przerysować interfejs
-            StateHasChanged(); 
+            StateHasChanged();
         }
     }
 
@@ -157,6 +195,14 @@
 
     private void CloseQrModal() => showQrModal = false;
 
+    private void OpenAddItemModal(int locationId)
+    {
+        newItemModel = new CreateItemDto { StorageLocationId = locationId };
+        showAddItemModal = true;
+    }
+
+    private void CloseAddItemModal() => showAddItemModal = false;
+
     private async Task HandleCreateLocation()
     {
         isSubmitting = true;
@@ -166,15 +212,15 @@
             if (response.IsSuccessStatusCode)
             {
                 showAddModal = false;
-                await LoadLocations(); // Ponowne załadowanie danych po dodaniu
+                await LoadLocations();
             }
         }
-        catch (Exception ex) 
-        { 
+        catch (Exception ex)
+        {
             Console.WriteLine($"Błąd zapisu: {ex.Message}");
         }
-        finally 
-        { 
+        finally
+        {
             isSubmitting = false;
             StateHasChanged();
         }
@@ -182,19 +228,16 @@
 
     private async Task HandleDeleteLocation(int id)
     {
-        // 1. Pytamy użytkownika o potwierdzenie
         bool confirmed = await JS.InvokeAsync<bool>("confirm", "Czy na pewno chcesz trwale usunąć ten schowek? Zostaną usunięte również wszystkie jego pod-schowki i zawartość!");
 
         if (!confirmed) return;
 
         try
         {
-            // 2. Uderzamy na nowo utworzony endpoint DELETE
             var response = await Http.DeleteAsync($"api/StorageLocations/{id}");
 
             if (response.IsSuccessStatusCode)
             {
-                // 3. Po udanym usunięciu po prostu przeładowujemy całą listę
                 await LoadLocations();
             }
             else
@@ -205,6 +248,35 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Błąd podczas usuwania: {ex.Message}");
+        }
+    }
+
+    private async Task HandleCreateItem()
+    {
+        isSubmittingItem = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/Items", newItemModel);
+
+            if (response.IsSuccessStatusCode)
+            {
+                showAddItemModal = false;
+                await LoadLocations();
+            }
+            else
+            {
+                var errorText = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"Błąd dodawania przedmiotu: {errorText}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd wyjątku dodawania przedmiotu: {ex.Message}");
+        }
+        finally
+        {
+            isSubmittingItem = false;
+            StateHasChanged();
         }
     }
 }
