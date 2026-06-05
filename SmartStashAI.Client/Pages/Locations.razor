@@ -4,6 +4,7 @@
 @using System.Text.Json
 @using SmartStashAI.Client.Shared
 @inject HttpClient Http
+@inject IJSRuntime JS
 @attribute [Authorize]
 
 <div class="container mt-4 mb-5">
@@ -38,7 +39,7 @@
         <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
             @foreach (var loc in rootLocations)
             {
-                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" />
+                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" OnDelete="HandleDeleteLocation" />
             }
         </div>
     }
@@ -176,6 +177,34 @@
         { 
             isSubmitting = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task HandleDeleteLocation(int id)
+    {
+        // 1. Pytamy użytkownika o potwierdzenie
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Czy na pewno chcesz trwale usunąć ten schowek? Zostaną usunięte również wszystkie jego pod-schowki i zawartość!");
+
+        if (!confirmed) return;
+
+        try
+        {
+            // 2. Uderzamy na nowo utworzony endpoint DELETE
+            var response = await Http.DeleteAsync($"api/StorageLocations/{id}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                // 3. Po udanym usunięciu po prostu przeładowujemy całą listę
+                await LoadLocations();
+            }
+            else
+            {
+                Console.WriteLine($"Błąd usuwania. Status: {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd podczas usuwania: {ex.Message}");
         }
     }
 }

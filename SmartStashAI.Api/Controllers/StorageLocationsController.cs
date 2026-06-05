@@ -60,21 +60,19 @@ public class StorageLocationsController : ControllerBase
         });
     }
 
-    // NOWA METODA: Pobiera wszystkie główne lokalizacje dla danego domu
     [HttpGet]
     public async Task<ActionResult<IEnumerable<StorageLocationResponseDto>>> GetAllLocations()
     {
         int householdId = GetUserHouseholdId();
 
-        // Pobieramy tylko lokalizacje "główne" (korzenie drzewa), np. Garaż, Pokój
-        var locations = await _context.StorageLocations
-            .Where(l => l.HouseholdId == householdId && l.ParentLocationId == null)
+        // 1. Pobieramy WSZYSTKIE lokalizacje i ich przedmioty dla danego gospodarstwa domowego
+        var allLocations = await _context.StorageLocations
+            .Where(l => l.HouseholdId == householdId)
             .Include(l => l.Items)
-            .Include(l => l.ChildLocations)
-                .ThenInclude(cl => cl.Items)
             .ToListAsync();
 
-        var response = locations.Select(location => new StorageLocationResponseDto
+        // 2. Mapujemy je na płaską listę obiektów DTO (na razie bez zagnieżdżania)
+        var allDtos = allLocations.Select(location => new StorageLocationResponseDto
         {
             Id = location.Id,
             Name = location.Name,
@@ -88,24 +86,28 @@ public class StorageLocationsController : ControllerBase
                 Purpose = i.Purpose,
                 IsLost = i.IsLost
             }).ToList(),
-            ChildLocations = location.ChildLocations.Select(cl => new StorageLocationResponseDto
-            {
-                Id = cl.Id,
-                Name = cl.Name,
-                QrCodeToken = cl.QrCodeToken,
-                ParentLocationId = cl.ParentLocationId,
-                Items = cl.Items.Select(ci => new ItemResponseDto
-                {
-                    Id = ci.Id,
-                    Name = ci.Name,
-                    Category = ci.Category,
-                    Purpose = ci.Purpose,
-                    IsLost = ci.IsLost
-                }).ToList()
-            }).ToList()
+            ChildLocations = new List<StorageLocationResponseDto>() // Przygotowujemy pustą listę na dzieci
         }).ToList();
 
-        return Ok(response);
+        // 3. Budujemy strukturę drzewiastą w pamięci RAM
+        var dtoLookup = allDtos.ToDictionary(d => d.Id);
+        var rootLocations = new List<StorageLocationResponseDto>();
+
+        foreach (var dto in allDtos)
+        {
+            if (dto.ParentLocationId == null)
+            {
+                // To jest główna szafa (korzeń)
+                rootLocations.Add(dto);
+            }
+            else if (dtoLookup.TryGetValue(dto.ParentLocationId.Value, out var parentDto))
+            {
+                // To jest podlokalizacja – przypisujemy ją do jej bezpośredniego rodzica
+                parentDto.ChildLocations.Add(dto);
+            }
+        }
+
+        return Ok(rootLocations);
     }
 
     // Wyszukiwanie lokalizacji i jej zawartości na podstawie zeskanowanego kodu QR (Opcja Wyszukiwania 1)
@@ -176,5 +178,25 @@ public class StorageLocationsController : ControllerBase
         byte[] qrCodeAsPngByteArr = ppngByteQrCode.GetGraphic(20); // Liczba określa wielkość/piksele na moduł
 
         return File(qrCodeAsPngByteArr, "image/png");
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteLocation(int id)
+    {
+        int householdId = GetUserHouseholdId();
+
+        // Szukamy schowka, upewniając się, że należy do aktualnego domu
+        var location = await _context.StorageLocations
+            .FirstOrDefaultAsync(l => l.Id == id && l.HouseholdId == householdId);
+
+        if (location == null)
+        {
+            return NotFound("Nie znaleziono schowka do usunięcia.");
+        }
+
+        _context.StorageLocations.Remove(location);
+        await _context.SaveChangesAsync();
+
+        return NoContent(); // Zwraca kod 204 (Sukces, brak treści do zwrócenia)
     }
 }
