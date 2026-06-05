@@ -6,19 +6,37 @@
 @using SmartStashAI.Client.Shared
 @inject HttpClient Http
 @inject IJSRuntime JS
+@inject IConfiguration Configuration
 @attribute [Authorize]
 
 <div class="container mt-4 mb-5">
+
+    @* ── Nagłówek strony ── *@
     <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
         <div>
-            <h2 class="fw-bold text-primary mb-0"><i class="bi bi-diagram-3-fill me-2"></i>Moje Schowki</h2>
-            <p class="text-muted small mb-0">Zarządzaj strukturą szaf, regałów i szuflad w Twoim domu</p>
+            <h2 class="fw-bold text-primary mb-0">
+                <i class="bi bi-diagram-3-fill me-2"></i>Moje Schowki
+            </h2>
+            <p class="text-muted small mb-0">
+                Zarządzaj strukturą szaf, regałów i szuflad w Twoim domu
+            </p>
         </div>
-        <button class="btn btn-primary shadow-sm" @onclick="() => OpenAddModal(null)">
+        <button class="btn btn-primary shadow-sm" @onclick="() => OpenAddLocationModal(null)">
             <i class="bi bi-plus-circle me-1"></i> Nowa główna szafa
         </button>
     </div>
 
+    @* ── Alerty błędów ── *@
+    @if (!string.IsNullOrEmpty(globalErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible shadow-sm" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            @globalErrorMessage
+            <button type="button" class="btn-close" @onclick="() => globalErrorMessage = null"></button>
+        </div>
+    }
+
+    @* ── Stan ładowania ── *@
     @if (isLoading)
     {
         <div class="text-center my-5">
@@ -28,20 +46,24 @@
     }
     else if (rootLocations == null || !rootLocations.Any())
     {
+        @* ── Pusty stan ── *@
         <div class="alert alert-info p-5 text-center shadow-sm rounded border" role="alert">
             <i class="bi bi-box-seam text-secondary display-4 d-block mb-3"></i>
             <h4 class="fw-bold">Brak zarejestrowanych schowków</h4>
             <p class="text-muted">Nie utworzyłeś jeszcze żadnego miejsca do przechowywania przedmiotów.</p>
-            <button class="btn btn-primary mt-2" @onclick="() => OpenAddModal(null)">Stwórz pierwszy kontener</button>
+            <button class="btn btn-primary mt-2" @onclick="() => OpenAddLocationModal(null)">
+                Stwórz pierwszy kontener
+            </button>
         </div>
     }
     else
     {
+        @* ── Drzewo lokalizacji ── *@
         <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
             @foreach (var loc in rootLocations)
             {
                 <LocationTreeNode Location="loc"
-                                  OnAddChild="@(id => OpenAddModal(id))"
+                                  OnAddChild="@(id => OpenAddLocationModal(id))"
                                   OnShowQr="OpenQrModal"
                                   OnDelete="HandleDeleteLocation"
                                   OnAddItem="OpenAddItemModal"
@@ -52,117 +74,241 @@
     }
 </div>
 
-@if (showAddModal)
+@* ════════════════════════════════════════════════════
+   MODAL – Dodawanie lokalizacji
+   ════════════════════════════════════════════════════ *@
+@if (showAddLocationModal)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+    <div class="modal fade show d-block" tabindex="-1"
+         style="background: rgba(0,0,0,0.5); z-index: 1050;">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
+
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title fw-bold">
                         <i class="bi bi-folder-plus me-2"></i>
-                        @(newLocationModel.ParentLocationId.HasValue ? "Dodaj podlokalizację (szufladę)" : "Dodaj główną lokalizację")
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAddModal"></button>
-                </div>
+                        @(newLocationModel.ParentLocationId.HasValue
+                                            ? "Dodaj podlokalizację (szufladę)"
+                                            : "Dodaj główną lokalizację")
+                </h5>
+                <button type="button" class="btn-close btn-close-white"
+                        @onclick="CloseAddLocationModal" disabled="@isSubmittingLocation">
+                </button>
+            </div>
+
                 <EditForm Model="newLocationModel" OnValidSubmit="HandleCreateLocation">
+                    <DataAnnotationsValidator />
                     <div class="modal-body">
+
+                    @if (!string.IsNullOrEmpty(locationModalError))
+                        {
+                            <div class="alert alert-danger small py-2">
+                                <i class="bi bi-exclamation-circle me-1"></i>@locationModalError
+                            </div>
+                        }
+
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Nazwa schowka / szafki</label>
-                            <InputText @bind-Value="newLocationModel.Name" class="form-control" placeholder="np. Szafka narzędziowa, Regał A, Garaż" />
+                            <label class="form-label small fw-bold">
+                                Nazwa schowka / szafki
+                            </label>
+                            <InputText @bind-Value="newLocationModel.Name"
+                                       class="form-control"
+                                       placeholder="np. Szafka narzędziowa, Regał A, Garaż"
+                                       disabled="@isSubmittingLocation" />
+                            <ValidationMessage For="@(() => newLocationModel.Name)" />
                         </div>
+
                     </div>
                     <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseAddModal">Anuluj</button>
-                        <button type="submit" class="btn btn-primary" disabled="@isSubmitting">Zapisz schowek</button>
+                        <button type="button" class="btn btn-secondary"
+                                @onclick="CloseAddLocationModal"
+                                disabled="@isSubmittingLocation">
+                            Anuluj
+                        </button>
+                        <button type="submit" class="btn btn-primary"
+                                disabled="@isSubmittingLocation">
+                            @if (isSubmittingLocation)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Zapisz schowek
+                        </button>
                     </div>
                 </EditForm>
+
             </div>
         </div>
     </div>
 }
 
+@* ════════════════════════════════════════════════════
+   MODAL – Dodawanie przedmiotu
+   ════════════════════════════════════════════════════ *@
 @if (showAddItemModal)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+    <div class="modal fade show d-block" tabindex="-1"
+         style="background: rgba(0,0,0,0.5); z-index: 1050;">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
+
                 <div class="modal-header bg-success text-white">
                     <h5 class="modal-title fw-bold">
-                        <i class="bi bi-box-arrow-in-down me-2"></i> Dodaj przedmiot do schowka
+                        <i class="bi bi-box-arrow-in-down me-2"></i>
+                        Dodaj przedmiot do schowka
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAddItemModal"></button>
+                    <button type="button" class="btn-close btn-close-white"
+                            @onclick="CloseAddItemModal" disabled="@isSubmittingItem">
+                    </button>
                 </div>
+
                 <EditForm Model="newItemModel" OnValidSubmit="HandleCreateItem">
+                    <DataAnnotationsValidator />
                     <div class="modal-body">
+
+                        @if (!string.IsNullOrEmpty(itemModalError))
+                        {
+                            <div class="alert alert-danger small py-2">
+                                <i class="bi bi-exclamation-circle me-1"></i>@itemModalError
+                            </div>
+                        }
+
                         <div class="mb-3">
                             <label class="form-label small fw-bold">Nazwa przedmiotu</label>
-                            <InputText @bind-Value="newItemModel.Name" class="form-control" placeholder="np. Wiertarka, Kable USB" />
+                            <InputText @bind-Value="newItemModel.Name"
+                                       class="form-control"
+                                       placeholder="np. Wiertarka, Kable USB"
+                                       disabled="@isSubmittingItem" />
+                            <ValidationMessage For="@(() => newItemModel.Name)" />
                         </div>
                         <div class="mb-3">
                             <label class="form-label small fw-bold">Kategoria</label>
-                            <InputText @bind-Value="newItemModel.Category" class="form-control" placeholder="np. Narzędzia, Elektronika" />
+                            <InputText @bind-Value="newItemModel.Category"
+                                       class="form-control"
+                                       placeholder="np. Narzędzia, Elektronika"
+                                       disabled="@isSubmittingItem" />
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Przeznaczenie (opcjonalnie)</label>
-                            <InputText @bind-Value="newItemModel.Purpose" class="form-control" placeholder="np. Do remontu" />
+                            <label class="form-label small fw-bold">
+                                Przeznaczenie <span class="text-muted fw-normal">(opcjonalnie)</span>
+                            </label>
+                            <InputText @bind-Value="newItemModel.Purpose"
+                                       class="form-control"
+                                       placeholder="np. Do remontu łazienki"
+                                       disabled="@isSubmittingItem" />
                         </div>
+
                     </div>
                     <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseAddItemModal">Anuluj</button>
-                        <button type="submit" class="btn btn-success" disabled="@isSubmittingItem">Zapisz przedmiot</button>
+                        <button type="button" class="btn btn-secondary"
+                                @onclick="CloseAddItemModal"
+                                disabled="@isSubmittingItem">
+                            Anuluj
+                        </button>
+                        <button type="submit" class="btn btn-success"
+                                disabled="@isSubmittingItem">
+                            @if (isSubmittingItem)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Zapisz przedmiot
+                        </button>
                     </div>
                 </EditForm>
+
             </div>
         </div>
     </div>
 }
 
+@* ════════════════════════════════════════════════════
+   MODAL – Kod QR
+   ════════════════════════════════════════════════════ *@
 @if (showQrModal && selectedLocation != null)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+    <div class="modal fade show d-block" tabindex="-1"
+         style="background: rgba(0,0,0,0.5); z-index: 1050;">
         <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content border-0 shadow">
+
                 <div class="modal-header bg-dark text-white py-2">
-                    <h6 class="modal-title fw-bold text-truncate">Kod QR: @selectedLocation.Name</h6>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseQrModal"></button>
+                    <h6 class="modal-title fw-bold text-truncate">
+                        <i class="bi bi-qr-code me-2"></i>@selectedLocation.Name
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white"
+                            @onclick="CloseQrModal">
+                    </button>
                 </div>
+
                 <div class="modal-body text-center p-4">
-                    <img src="https://localhost:7047/api/StorageLocations/@(selectedLocation.Id)/qr-image" class="img-fluid border p-2 rounded bg-white shadow-sm mb-3" style="max-height: 200px;" alt="Kod QR" />
-                    <div class="bg-light p-2 rounded font-monospace style-all small text-secondary">
+                    <img src="@ApiBaseUrl/api/StorageLocations/@(selectedLocation.Id)/qr-image"
+                         class="img-fluid border p-2 rounded bg-white shadow-sm mb-3"
+                         style="max-height: 200px;"
+                         alt="Kod QR dla @selectedLocation.Name" />
+
+                    <div class="bg-light p-2 rounded font-monospace small text-secondary text-break">
                         @selectedLocation.QrCodeToken
                     </div>
                 </div>
+
                 <div class="modal-footer bg-light p-2 d-flex justify-content-between">
-                    <button type="button" class="btn btn-sm btn-secondary" @onclick="CloseQrModal">Zamknij</button>
-                    <a href="https://localhost:7047/api/StorageLocations/@(selectedLocation.Id)/qr-image" download="QR_@selectedLocation.Name" target="_blank" class="btn btn-sm btn-success">
+                    <button type="button" class="btn btn-sm btn-secondary"
+                            @onclick="CloseQrModal">
+                        Zamknij
+                    </button>
+                    <a href="@ApiBaseUrl/api/StorageLocations/@(selectedLocation.Id)/qr-image"
+                       download="QR_@selectedLocation.Name"
+                       target="_blank"
+                       class="btn btn-sm btn-success">
                         <i class="bi bi-download me-1"></i> Pobierz PNG
                     </a>
                 </div>
+
             </div>
         </div>
     </div>
 }
 
 @code {
+    // ── Stan danych ──────────────────────────────────────────────────────────
     private List<StorageLocationResponseDto>? rootLocations;
     private bool isLoading = true;
-    private bool showAddModal = false;
-    private bool showQrModal = false;
-    private bool isSubmitting = false;
+    private string? globalErrorMessage;
 
+    // ── Adres API z konfiguracji ─────────────────────────────────────────────
+    private string ApiBaseUrl =>
+        (Configuration["ApiBaseUrl"] ?? "https://localhost:7047/").TrimEnd('/');
+
+    // ── Modal: dodawanie lokalizacji ─────────────────────────────────────────
+    private bool showAddLocationModal = false;
+    private bool isSubmittingLocation = false;
+    private string? locationModalError;
     private CreateLocationDto newLocationModel = new();
-    private StorageLocationResponseDto? selectedLocation;
 
-    // --- Zmienne dla przedmiotów ---
+    // ── Modal: dodawanie przedmiotu ──────────────────────────────────────────
     private bool showAddItemModal = false;
     private bool isSubmittingItem = false;
+    private string? itemModalError;
     private CreateItemDto newItemModel = new();
 
+    // ── Modal: kod QR ───────────────────────────────────────────────────────
+    private bool showQrModal = false;
+    private StorageLocationResponseDto? selectedLocation;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Lifecycle
+    // ════════════════════════════════════════════════════════════════════════
+
     protected override async Task OnInitializedAsync() => await LoadLocations();
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Ładowanie danych
+    // ════════════════════════════════════════════════════════════════════════
 
     private async Task LoadLocations()
     {
         isLoading = true;
+        globalErrorMessage = null;
+
         try
         {
             var options = new JsonSerializerOptions
@@ -172,11 +318,17 @@
             };
 
             var rawJson = await Http.GetStringAsync("api/StorageLocations");
-            rootLocations = JsonSerializer.Deserialize<List<StorageLocationResponseDto>>(rawJson, options);
+            rootLocations = JsonSerializer.Deserialize<List<StorageLocationResponseDto>>(rawJson, options)
+                            ?? new List<StorageLocationResponseDto>();
+        }
+        catch (HttpRequestException ex)
+        {
+            globalErrorMessage = $"Błąd połączenia z serwerem: {ex.Message}";
+            rootLocations = new List<StorageLocationResponseDto>();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd podczas ładowania z API: {ex.Message}");
+            globalErrorMessage = $"Nieoczekiwany błąd: {ex.Message}";
             rootLocations = new List<StorageLocationResponseDto>();
         }
         finally
@@ -186,56 +338,69 @@
         }
     }
 
-    private void OpenAddModal(int? parentId)
+    // ════════════════════════════════════════════════════════════════════════
+    // Modal: Lokalizacja – otwieranie / zamykanie / zapis
+    // ════════════════════════════════════════════════════════════════════════
+
+    private void OpenAddLocationModal(int? parentId)
     {
         newLocationModel = new CreateLocationDto { ParentLocationId = parentId };
-        showAddModal = true;
+        locationModalError = null;
+        showAddLocationModal = true;
     }
 
-    private void CloseAddModal() => showAddModal = false;
-
-    private void OpenQrModal(StorageLocationResponseDto loc)
+    private void CloseAddLocationModal()
     {
-        selectedLocation = loc;
-        showQrModal = true;
+        showAddLocationModal = false;
+        locationModalError = null;
     }
-
-    private void CloseQrModal() => showQrModal = false;
-
-    private void OpenAddItemModal(int locationId)
-    {
-        newItemModel = new CreateItemDto { StorageLocationId = locationId };
-        showAddItemModal = true;
-    }
-
-    private void CloseAddItemModal() => showAddItemModal = false;
 
     private async Task HandleCreateLocation()
     {
-        isSubmitting = true;
+        if (string.IsNullOrWhiteSpace(newLocationModel.Name))
+        {
+            locationModalError = "Nazwa schowka nie może być pusta.";
+            return;
+        }
+
+        isSubmittingLocation = true;
+        locationModalError = null;
+
         try
         {
             var response = await Http.PostAsJsonAsync("api/StorageLocations", newLocationModel);
+
             if (response.IsSuccessStatusCode)
             {
-                showAddModal = false;
+                CloseAddLocationModal();
                 await LoadLocations();
+            }
+            else
+            {
+                var errorText = await response.Content.ReadAsStringAsync();
+                locationModalError = $"Błąd serwera ({(int)response.StatusCode}): {errorText}";
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd zapisu: {ex.Message}");
+            locationModalError = $"Błąd połączenia: {ex.Message}";
         }
         finally
         {
-            isSubmitting = false;
-            StateHasChanged();
+            isSubmittingLocation = false;
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // Lokalizacja – usuwanie
+    // ════════════════════════════════════════════════════════════════════════
+
     private async Task HandleDeleteLocation(int id)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Czy na pewno chcesz trwale usunąć ten schowek? Zostaną usunięte również wszystkie jego pod-schowki i zawartość!");
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Czy na pewno chcesz trwale usunąć ten schowek?\n\n" +
+            "Zostaną usunięte również wszystkie pod-schowki i ich zawartość!");
 
         if (!confirmed) return;
 
@@ -249,45 +414,77 @@
             }
             else
             {
-                Console.WriteLine($"Błąd usuwania. Status: {response.StatusCode}");
+                globalErrorMessage = $"Nie udało się usunąć schowka. Status: {(int)response.StatusCode}";
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd podczas usuwania: {ex.Message}");
+            globalErrorMessage = $"Błąd podczas usuwania: {ex.Message}";
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Modal: Przedmiot – otwieranie / zamykanie / zapis
+    // ════════════════════════════════════════════════════════════════════════
+
+    private void OpenAddItemModal(int locationId)
+    {
+        newItemModel = new CreateItemDto { StorageLocationId = locationId };
+        itemModalError = null;
+        showAddItemModal = true;
+    }
+
+    private void CloseAddItemModal()
+    {
+        showAddItemModal = false;
+        itemModalError = null;
     }
 
     private async Task HandleCreateItem()
     {
+        if (string.IsNullOrWhiteSpace(newItemModel.Name))
+        {
+            itemModalError = "Nazwa przedmiotu nie może być pusta.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newItemModel.Category))
+        {
+            itemModalError = "Kategoria nie może być pusta.";
+            return;
+        }
+
         isSubmittingItem = true;
+        itemModalError = null;
+
         try
         {
             var response = await Http.PostAsJsonAsync("api/Items", newItemModel);
 
             if (response.IsSuccessStatusCode)
             {
-                showAddItemModal = false;
+                CloseAddItemModal();
                 await LoadLocations();
             }
             else
             {
                 var errorText = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Błąd dodawania przedmiotu: {errorText}");
+                itemModalError = $"Błąd serwera ({(int)response.StatusCode}): {errorText}";
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd wyjątku dodawania przedmiotu: {ex.Message}");
+            itemModalError = $"Błąd połączenia: {ex.Message}";
         }
         finally
         {
             isSubmittingItem = false;
-            StateHasChanged();
         }
     }
 
-    // --- NOWE METODY DLA PRZEDMIOTÓW: Zmiana statusu i Kasowanie ---
+    // ════════════════════════════════════════════════════════════════════════
+    // Przedmiot – zmiana statusu (zgubiony / znaleziony)
+    // ════════════════════════════════════════════════════════════════════════
 
     private async Task HandleToggleItemStatus(ItemResponseDto item)
     {
@@ -298,18 +495,31 @@
 
             if (response.IsSuccessStatusCode)
             {
-                await LoadLocations();
+                // Optymistyczna aktualizacja UI – unikamy pełnego przeładowania
+                item.IsLost = !item.IsLost;
+                StateHasChanged();
+            }
+            else
+            {
+                globalErrorMessage = $"Nie udało się zmienić statusu przedmiotu.";
+                await LoadLocations(); // Odśwież żeby przywrócić spójny stan
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd podczas zmiany statusu: {ex.Message}");
+            globalErrorMessage = $"Błąd: {ex.Message}";
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // Przedmiot – usuwanie
+    // ════════════════════════════════════════════════════════════════════════
+
     private async Task HandleDeleteItem(int itemId)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Czy na pewno chcesz bezpowrotnie usunąć ten przedmiot?");
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Czy na pewno chcesz bezpowrotnie usunąć ten przedmiot?");
 
         if (!confirmed) return;
 
@@ -321,10 +531,30 @@
             {
                 await LoadLocations();
             }
+            else
+            {
+                globalErrorMessage = $"Nie udało się usunąć przedmiotu. Status: {(int)response.StatusCode}";
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd podczas usuwania przedmiotu: {ex.Message}");
+            globalErrorMessage = $"Błąd podczas usuwania: {ex.Message}";
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Modal: Kod QR
+    // ════════════════════════════════════════════════════════════════════════
+
+    private void OpenQrModal(StorageLocationResponseDto loc)
+    {
+        selectedLocation = loc;
+        showQrModal = true;
+    }
+
+    private void CloseQrModal()
+    {
+        showQrModal = false;
+        selectedLocation = null;
     }
 }
