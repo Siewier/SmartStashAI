@@ -1,34 +1,109 @@
-﻿@page "/"
+@page "/"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
 @inject NavigationManager Navigation
 @attribute [Authorize]
 
 <AuthorizeView>
     <Authorized>
         <div class="container mt-4">
+
+            @* ── Powitanie ── *@
             <div class="p-5 mb-4 bg-light rounded-3 shadow-sm">
                 <div class="container-fluid py-3">
-                    <h1 class="display-5 fw-bold text-primary">Cześć, @context.User.Identity?.Name!</h1>
-                    <p class="col-md-8 fs-4 text-muted">Witaj w swoim inteligentnym gospodarstwie domowym (ID: @GetHouseholdId()).</p>
+                    <h1 class="display-5 fw-bold text-primary">
+                        Cześć, @context.User.Identity?.Name!
+                    </h1>
+                    <p class="col-md-8 fs-4 text-muted">
+                        Witaj w swoim inteligentnym magazynie domowym.
+                        @if (householdId.HasValue)
+                        {
+                            <span class="badge bg-secondary ms-2 fs-6">
+                                Gospodarstwo #@householdId
+                            </span>
+                        }
+                    </p>
                     <hr class="my-4" />
-                    <p>Wybierz akcję z menu, aby zarządzać pojemnikami, skanować kody QR lub zidentyfikować przedmiot przez AI.</p>
+                    <p class="text-muted">
+                        Wybierz akcję z menu, aby zarządzać pojemnikami,
+                        skanować kody QR lub zidentyfikować przedmiot przez AI.
+                    </p>
                 </div>
+            </div>
+
+            @* ── Kafelki szybkiego dostępu ── *@
+            <div class="row g-4">
+
+                <div class="col-md-4">
+                    <div class="card h-100 shadow-sm border-0 text-center p-4"
+                         style="cursor:pointer; border-radius: 12px;"
+                         @onclick='() => Navigation.NavigateTo("/locations")'>
+                        <i class="bi bi-diagram-3-fill text-primary display-4 mb-3"></i>
+                        <h5 class="fw-bold">Moje Schowki</h5>
+                        <p class="text-muted small">
+                            Przeglądaj i zarządzaj strukturą szaf, regałów i szuflad.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card h-100 shadow-sm border-0 text-center p-4"
+                         style="cursor:pointer; border-radius: 12px;"
+                         @onclick='() => Navigation.NavigateTo("/search")'>
+                        <i class="bi bi-search text-success display-4 mb-3"></i>
+                        <h5 class="fw-bold">Wyszukaj Przedmiot</h5>
+                        <p class="text-muted small">
+                            Znajdź dowolny przedmiot i sprawdź gdzie się znajduje.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card h-100 shadow-sm border-0 text-center p-4"
+                         style="cursor:pointer; border-radius: 12px;"
+                         @onclick='() => Navigation.NavigateTo("/ai-recognition")'>
+                        <i class="bi bi-cpu-fill text-warning display-4 mb-3"></i>
+                        <h5 class="fw-bold">Rozpoznawanie AI</h5>
+                        <p class="text-muted small">
+                            Zrób zdjęcie przedmiotu i pozwól AI go skatalogować.
+                        </p>
+                    </div>
+                </div>
+
             </div>
         </div>
     </Authorized>
     <NotAuthorized>
-        @{
-            Navigation.NavigateTo("/login");
-        }
+        @{ Navigation.NavigateTo("/login"); }
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
-@using System.Security.Claims
-@using Microsoft.AspNetCore.Authorization
+    private int? householdId;
 
-    private string GetHouseholdId()
-{
-    // Wyciągamy zaszyte w tokenie ID domu
-    return "1"; // Na potrzeby pierwszego renderu, za chwilę rozbudujemy profil
-}
+    protected override void OnInitialized()
+    {
+        // Pobieramy zalogowanego użytkownika przez kaskadowy parametr AuthenticationState
+        // Nie potrzebujemy InjectAttribute – AuthorizeView dostarcza nam context
+    }
+
+    // Odczyt HouseholdId z claims jest wykonywany bezpośrednio w szablonie przez context,
+    // ale dla logiki @code używamy lifecycle OnParametersSet gdzie mamy dostęp do CascadingParameter
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthenticationStateTask is null) return;
+
+        var authState = await AuthenticationStateTask;
+        var user = authState.User;
+
+        var householdClaim = user.FindFirst("HouseholdId");
+        if (householdClaim != null && int.TryParse(householdClaim.Value, out var id))
+        {
+            householdId = id;
+        }
+    }
 }

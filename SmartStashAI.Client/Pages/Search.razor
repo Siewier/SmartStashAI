@@ -1,0 +1,204 @@
+@page "/search"
+@using Microsoft.AspNetCore.Authorization
+@using SmartStashAI.Shared.Dtos
+@using System.Net.Http.Json
+@inject HttpClient Http
+@attribute [Authorize]
+
+<div class="container mt-4 mb-5">
+
+    @* ── Nagłówek ── *@
+    <div class="border-bottom pb-3 mb-4">
+        <h2 class="fw-bold text-success mb-0">
+            <i class="bi bi-search me-2"></i>Wyszukaj Przedmiot
+        </h2>
+        <p class="text-muted small mb-0">
+            Znajdź przedmiot po nazwie, kategorii lub przeznaczeniu.
+        </p>
+    </div>
+
+    @* ── Pole wyszukiwania ── *@
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-8">
+            <div class="input-group input-group-lg shadow-sm">
+                <span class="input-group-text bg-white border-end-0">
+                    <i class="bi bi-search text-muted"></i>
+                </span>
+                <input type="text"
+                       class="form-control border-start-0 ps-0"
+                       placeholder="Wpisz np. &quot;wiertarka&quot;, &quot;kabel&quot;, &quot;elektronika&quot;..."
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDown"
+                       disabled="@isSearching" />
+                <button class="btn btn-success px-4"
+                        @onclick="ExecuteSearch"
+                        disabled="@(isSearching || string.IsNullOrWhiteSpace(searchQuery))">
+                    @if (isSearching)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-arrow-right-circle me-1"></i>
+                    }
+                    Szukaj
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-2 py-2 small">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>@errorMessage
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ── Wyniki ── *@
+
+    @if (searchResults != null)
+    {
+        @if (!searchResults.Any())
+        {
+            <div class="text-center my-5 text-muted">
+                <i class="bi bi-inbox display-3 d-block mb-3 opacity-50"></i>
+                <h5>Brak wyników dla „@lastQuery"</h5>
+                <p class="small">Spróbuj innej frazy lub sprawdź pisownię.</p>
+            </div>
+        }
+        else
+        {
+            <div class="row justify-content-center">
+                <div class="col-md-10">
+
+                    @* ── Licznik ── *@
+                    <p class="text-muted small mb-3">
+                        Znaleziono <strong>@searchResults.Count</strong>
+                        @(searchResults.Count == 1 ? "przedmiot" :
+                          searchResults.Count is >= 2 and <= 4 ? "przedmioty" : "przedmiotów")
+                        dla „@lastQuery"
+                    </p>
+
+                    @* ── Lista wyników ── *@
+                    <div class="list-group shadow-sm">
+                        @foreach (var item in searchResults)
+                        {
+                            <div class="list-group-item list-group-item-action p-3 @(item.IsLost ? "list-group-item-danger" : "")">
+                                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+
+                                    @* Lewa kolumna – nazwa i kategoria *@
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex align-items-center gap-2 mb-1">
+                                            <h6 class="mb-0 fw-bold">@item.Name</h6>
+                                            <span class="badge bg-info text-dark">@item.Category</span>
+                                            @if (item.IsLost)
+                                            {
+                                                <span class="badge bg-danger">
+                                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Zgubiony
+                                                </span>
+                                            }
+                                        </div>
+
+                                        @if (!string.IsNullOrWhiteSpace(item.Purpose))
+                                        {
+                                            <p class="mb-1 text-muted small">
+                                                <i class="bi bi-tag me-1"></i>@item.Purpose
+                                            </p>
+                                        }
+
+                                        @* Ścieżka lokalizacji *@
+                                        <div class="mt-1">
+                                            @if (!string.IsNullOrWhiteSpace(item.ParentLocationsPath))
+                                            {
+                                                @foreach (var (segment, index) in item.ParentLocationsPath
+                                                    .Split(" -> ")
+                                                    .Select((s, i) => (s, i)))
+                                                {
+                                                    @if (index > 0)
+                                                    {
+                                                        <i class="bi bi-chevron-right text-muted small mx-1"></i>
+                                                    }
+                                                    <span class="badge @(index == item.ParentLocationsPath.Split(" -> ").Length - 1 ? "bg-primary" : "bg-secondary bg-opacity-50 text-dark")">
+                                                        <i class="bi bi-folder-fill me-1"></i>@segment
+                                                    </span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary bg-opacity-50 text-dark">
+                                                    <i class="bi bi-folder-fill me-1"></i>@item.StorageLocationName
+                                                </span>
+                                            }
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                </div>
+            </div>
+        }
+    }
+    else if (!isSearching && lastQuery == null)
+    {
+        @* ── Stan początkowy przed pierwszym wyszukiwaniem ── *@
+        <div class="text-center my-5 text-muted">
+            <i class="bi bi-binoculars display-3 d-block mb-3 opacity-25"></i>
+            <p>Wpisz frazę i naciśnij Enter lub kliknij „Szukaj".</p>
+        </div>
+    }
+
+</div>
+
+@code {
+    private string searchQuery = string.Empty;
+    private string? lastQuery;
+    private bool isSearching = false;
+    private string? errorMessage;
+    private List<FullItemResponseDto>? searchResults;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(searchQuery))
+        {
+            await ExecuteSearch();
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        var trimmed = searchQuery.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+
+        isSearching = true;
+        errorMessage = null;
+        searchResults = null;
+        lastQuery = trimmed;
+
+        try
+        {
+            var encoded = Uri.EscapeDataString(trimmed);
+            searchResults = await Http.GetFromJsonAsync<List<FullItemResponseDto>>(
+                $"api/Items/search?query={encoded}");
+        }
+        catch (HttpRequestException ex) when ((int?)ex.StatusCode == 400)
+        {
+            errorMessage = "Zapytanie jest zbyt krótkie lub nieprawidłowe.";
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Błąd połączenia z serwerem: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Nieoczekiwany błąd: {ex.Message}";
+        }
+        finally
+        {
+            isSearching = false;
+        }
+    }
+}
