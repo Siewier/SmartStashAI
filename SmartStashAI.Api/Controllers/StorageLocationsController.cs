@@ -30,34 +30,82 @@ public class StorageLocationsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<StorageLocationResponseDto>> CreateLocation(CreateLocationDto dto)
+    public async Task<ActionResult<StorageLocationResponseDto>> CreateLocation([FromBody] CreateLocationDto dto)
     {
-        // 1. Pobierz ID gospodarstwa domowego zalogowanego użytkownika
         int householdId = GetUserHouseholdId();
+
+        // Generujemy unikalny token dla kodu QR (np. STASH_GUID)
+        string qrToken = $"STASH_{Guid.NewGuid().ToString("N").Substring(0, 12).ToUpper()}";
 
         var location = new StorageLocation
         {
             Name = dto.Name,
-            ParentLocationId = dto.ParentLocationId == 0 ? null : dto.ParentLocationId,
-            QrCodeToken = "STASH_" + Guid.NewGuid().ToString().Replace("-", "").Substring(0, 12).ToUpper(),
-            HouseholdId = householdId // <-- KLUCZOWA POPRAWKA: Przypisanie do aktualnego domu
+            QrCodeToken = qrToken,
+            HouseholdId = householdId,
+            ParentLocationId = dto.ParentLocationId
         };
 
         _context.StorageLocations.Add(location);
         await _context.SaveChangesAsync();
 
-        // Mapowanie na obiekt odpowiedzi
-        var responseDto = new StorageLocationResponseDto
+        return CreatedAtAction(nameof(GetLocationByQr), new { qrToken = location.QrCodeToken }, new StorageLocationResponseDto
         {
             Id = location.Id,
             Name = location.Name,
             QrCodeToken = location.QrCodeToken,
             ParentLocationId = location.ParentLocationId,
+            // Inicjalizujemy puste listy, by frontend nie otrzymał nulli:
             Items = new List<ItemResponseDto>(),
             ChildLocations = new List<StorageLocationResponseDto>()
-        };
+        });
+    }
 
-        return CreatedAtAction(nameof(CreateLocation), new { id = location.Id }, responseDto);
+    // NOWA METODA: Pobiera wszystkie główne lokalizacje dla danego domu
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<StorageLocationResponseDto>>> GetAllLocations()
+    {
+        int householdId = GetUserHouseholdId();
+
+        // Pobieramy tylko lokalizacje "główne" (korzenie drzewa), np. Garaż, Pokój
+        var locations = await _context.StorageLocations
+            .Where(l => l.HouseholdId == householdId && l.ParentLocationId == null)
+            .Include(l => l.Items)
+            .Include(l => l.ChildLocations)
+                .ThenInclude(cl => cl.Items)
+            .ToListAsync();
+
+        var response = locations.Select(location => new StorageLocationResponseDto
+        {
+            Id = location.Id,
+            Name = location.Name,
+            QrCodeToken = location.QrCodeToken,
+            ParentLocationId = location.ParentLocationId,
+            Items = location.Items.Select(i => new ItemResponseDto
+            {
+                Id = i.Id,
+                Name = i.Name,
+                Category = i.Category,
+                Purpose = i.Purpose,
+                IsLost = i.IsLost
+            }).ToList(),
+            ChildLocations = location.ChildLocations.Select(cl => new StorageLocationResponseDto
+            {
+                Id = cl.Id,
+                Name = cl.Name,
+                QrCodeToken = cl.QrCodeToken,
+                ParentLocationId = cl.ParentLocationId,
+                Items = cl.Items.Select(ci => new ItemResponseDto
+                {
+                    Id = ci.Id,
+                    Name = ci.Name,
+                    Category = ci.Category,
+                    Purpose = ci.Purpose,
+                    IsLost = ci.IsLost
+                }).ToList()
+            }).ToList()
+        }).ToList();
+
+        return Ok(response);
     }
 
     // Wyszukiwanie lokalizacji i jej zawartości na podstawie zeskanowanego kodu QR (Opcja Wyszukiwania 1)
@@ -128,45 +176,5 @@ public class StorageLocationsController : ControllerBase
         byte[] qrCodeAsPngByteArr = ppngByteQrCode.GetGraphic(20); // Liczba określa wielkość/piksele na moduł
 
         return File(qrCodeAsPngByteArr, "image/png");
-    }
-
-    [HttpGet("all")]
-    public async Task<ActionResult<List<StorageLocationResponseDto>>> GetAllRootLocations()
-    {
-        int householdId = GetUserHouseholdId();
-
-        // Pobieramy szafy najwyższego poziomu (ParentLocationId == null) 
-        // i JAWNIE dołączamy podlokalizacje (ChildLocations) oraz przedmioty (Items)
-        var rootLocations = await _context.StorageLocations
-            .Include(l => l.Items)
-            .Include(l => l.ChildLocations)
-                .ThenInclude(cl => cl.Items)
-            .Include(l => l.ChildLocations)
-                .ThenInclude(cl => cl.ChildLocations) // Wsparcie dla 3 poziomu (np. Szafa -> Szuflada -> Organizer)
-            .Where(l => l.ParentLocationId == null && l.HouseholdId == householdId)
-            .ToListAsync();
-
-        var response = rootLocations.Select(l => MapToDto(l)).ToList();
-        return Ok(response);
-    }
-
-    private static StorageLocationResponseDto MapToDto(StorageLocation loc)
-    {
-        return new StorageLocationResponseDto
-        {
-            Id = loc.Id,
-            Name = loc.Name,
-            QrCodeToken = loc.QrCodeToken,
-            ParentLocationId = loc.ParentLocationId,
-            Items = loc.Items?.Select(i => new ItemResponseDto
-            {
-                Id = i.Id,
-                Name = i.Name,
-                Category = i.Category,
-                Purpose = i.Purpose,
-                IsLost = i.IsLost
-            }).ToList() ?? new List<ItemResponseDto>(),
-            ChildLocations = loc.ChildLocations?.Select(cl => MapToDto(cl)).ToList() ?? new List<StorageLocationResponseDto>()
-        };
     }
 }

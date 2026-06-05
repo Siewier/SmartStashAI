@@ -1,6 +1,8 @@
 ﻿@page "/locations"
 @using Microsoft.AspNetCore.Authorization
 @using SmartStashAI.Shared.Dtos
+@using System.Text.Json
+@using SmartStashAI.Client.Shared
 @inject HttpClient Http
 @attribute [Authorize]
 
@@ -36,7 +38,7 @@
         <div class="card shadow-sm p-3 bg-white" style="border-radius: 12px;">
             @foreach (var loc in rootLocations)
             {
-                <LocationTreeNode Location="loc" OnAddChild="OpenAddModal" OnShowQr="OpenQrModal" />
+                <LocationTreeNode Location="loc" OnAddChild="@(id => OpenAddModal(id))" OnShowQr="OpenQrModal" />
             }
         </div>
     }
@@ -114,26 +116,27 @@
         isLoading = true;
         try
         {
-            var options = new System.Text.Json.JsonSerializerOptions
+            var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = null // Dopasowanie do konfiguracji API
+                PropertyNamingPolicy = null
             };
-
-            var response = await Http.GetFromJsonAsync<List<StorageLocationResponseDto>>("api/StorageLocations/all", options);
-            if (response != null)
-            {
-                rootLocations = response;
-            }
+            
+            // Pobieranie jako string i jawna deserializacja działa najstabilniej w Twoim środowisku
+            var rawJson = await Http.GetStringAsync("api/StorageLocations");
+            rootLocations = JsonSerializer.Deserialize<List<StorageLocationResponseDto>>(rawJson, options);
+            Console.WriteLine($"Zdeserializowano obiektów: {rootLocations?.Count ?? 0}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Błąd: {ex.Message}");
+            Console.WriteLine($"Błąd podczas ładowania z API: {ex.Message}");
             rootLocations = new List<StorageLocationResponseDto>();
         }
         finally
         {
             isLoading = false;
+            // Bardzo ważne w Blazorze: jawnie informujemy framework, że należy przerysować interfejs
+            StateHasChanged(); 
         }
     }
 
@@ -162,10 +165,17 @@
             if (response.IsSuccessStatusCode)
             {
                 showAddModal = false;
-                await LoadLocations();
+                await LoadLocations(); // Ponowne załadowanie danych po dodaniu
             }
         }
-        catch (Exception) { }
-        finally { isSubmitting = false; }
+        catch (Exception ex) 
+        { 
+            Console.WriteLine($"Błąd zapisu: {ex.Message}");
+        }
+        finally 
+        { 
+            isSubmitting = false;
+            StateHasChanged();
+        }
     }
 }
