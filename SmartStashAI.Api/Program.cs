@@ -17,7 +17,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=smartstash.db"));
 
 builder.Services.AddSingleton<IChatClient>(sp =>
-    new OllamaApiClient(new Uri("http://localhost:11434"), "llama3.2-vision:11b"));
+    // LM Studio wystawia API w formacie zgodnym z OpenAI pod œcie¿k¹ /v1
+    new OllamaApiClient(new Uri("http://192.168.68.65:1234/v1"), "llava-1.6-mistral-7b"));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 

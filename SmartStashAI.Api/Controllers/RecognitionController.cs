@@ -27,80 +27,62 @@ public class RecognitionController : ControllerBase
         try
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Base64Image))
+                return BadRequest("Brak danych obrazu.");
+
+            // FIX: Usunięto rolę "system". Całość instrukcji przeniesiono do roli "user".
+            var instruction = "Jesteś ekspertem od katalogowania przedmiotów. Zidentyfikuj przedmiot na tym zdjęciu. Zwróć WYŁĄCZNIE czysty JSON w formacie: {\"name\": \"nazwa\", \"category\": \"kategoria\", \"purpose\": \"przeznaczenie\"}. Nie dodawaj żadnego tekstu przed ani po JSONie.";
+
+            var messages = new List<object>();
+
+            messages.Add(new
             {
-                return BadRequest("Przesłane żądanie nie zawiera danych obrazu.");
+                role = "user",
+                content = new List<object>
+            {
+                new { type = "text", text = instruction },
+                new { type = "image_url", image_url = new { url = request.Base64Image } }
             }
+            });
 
-            string base64Data = request.Base64Image;
-
-            if (base64Data.Contains(","))
+            var payload = new
             {
-                base64Data = base64Data.Split(',')[1];
-            }
-
-            var imageBytes = Convert.FromBase64String(base64Data);
-            var imageContent = new DataContent(imageBytes, "image/jpeg");
-
-            var systemPrompt = @"Jesteś ekspertem od katalogowania elektroniki, komponentów automatyki, narzędzi i przedmiotów domowych.
-Przeanalizuj przesłane zdjęcie i zwróć obiekt JSON reprezentujący zidentyfikowany przedmiot.
-Wszystkie wartości pól muszą być w języku polskim. Wybierz precyzyjną, logiczną kategorię (np. Okablowanie, Mikrokontrolery, Elektronika, Narzędzia ręczne).
-
-Oczekiwany format wyjściowy to ścisły, surowy JSON bez żadnego dodatkowego komentarza:
-{
-  ""name"": ""Dokładna nazwa przedmiotu"",
-  ""category"": ""Kategoria przedmiotu"",
-  ""purpose"": ""Krótkie przeznaczenie przedmiotu""
-}";
-
-            var userPrompt = "Zidentyfikuj przedmiot na tym zdjęciu i uzupełnij strukturę JSON.";
-
-            var options = new ChatOptions
-            {
-                ResponseFormat = ChatResponseFormat.Json,
-                Temperature = 0.1f
+                model = "llava-1.6-mistral-7b",
+                messages = messages,
+                temperature = 0.1
             };
 
-            var messages = new List<ChatMessage>
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(90); // Wydłużony czas dla pewności
+
+            var response = await client.PostAsJsonAsync("http://192.168.68.65:1234/v1/chat/completions", payload);
+
+            if (!response.IsSuccessStatusCode)
             {
-                new ChatMessage(ChatRole.System, systemPrompt),
-                new ChatMessage(ChatRole.User, userPrompt) { Contents = { imageContent } }
-            };
-
-            // 1. Wywołanie metody natywnej: GetResponseAsync
-            ChatResponse response = await _chatClient.GetResponseAsync(messages, options);
-
-            // 2. Pobranie tekstu za pomocą właściwości .Text, którą potwierdziliśmy w kodzie źródłowym
-            string jsonResponse = response.Text;
-
-            if (string.IsNullOrWhiteSpace(jsonResponse))
-            {
-                return StatusCode(500, "Model AI zwrócił pustą odpowiedź.");
+                var errorDetails = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, $"Błąd połączenia z LM Studio: {errorDetails}");
             }
 
-            if (jsonResponse.StartsWith("```"))
-            {
-                jsonResponse = jsonResponse.Replace("```json", "").Replace("```", "").Trim();
-            }
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+            // Wyciągnięcie odpowiedzi
+            string jsonResponse = result.GetProperty("choices")[0]
+                                        .GetProperty("message")
+                                        .GetProperty("content")
+                                        .GetString() ?? "";
+
+            // Oczyszczanie odpowiedzi (LLM często dodają Markdown)
+            jsonResponse = jsonResponse.Replace("```json", "").Replace("```", "").Trim();
 
             var recognizedItem = JsonSerializer.Deserialize<RecognizedItemDto>(
                 jsonResponse,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
             );
 
-            if (recognizedItem == null)
-            {
-                return StatusCode(500, "Nie udało się poprawnie sparsować odpowiedzi strukturalnej z AI.");
-            }
-
             return Ok(recognizedItem);
-        }
-        catch (FormatException)
-        {
-            return BadRequest("Przesłany ciąg tekstowy nie jest poprawnym formatem Base64.");
         }
         catch (Exception ex)
         {
-            return StatusCode(503, $"Usługa AI (Ollama) jest obecnie niedostępna lub wystąpił błąd komunikacji. Szczegóły: {ex.Message}");
+            return StatusCode(500, $"Błąd przetwarzania: {ex.Message}");
         }
     }
 }

@@ -1,0 +1,195 @@
+﻿@page "/ai-recognition"
+@using Microsoft.AspNetCore.Authorization
+@using SmartStashAI.Shared.Dtos
+@inject HttpClient Http
+@attribute [Authorize]
+
+<div class="container mt-4 mb-5">
+    <div class="border-bottom pb-3 mb-4">
+        <h2 class="fw-bold text-primary mb-0"><i class="bi bi-cpu-fill me-2"></i>Rozpoznawanie AI</h2>
+        <p class="text-muted small mb-0">Zrób zdjęcie przedmiotu, a sztuczna inteligencja pomoże Ci go sklasyfikować.</p>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">
+                    <i class="bi bi-camera me-2 text-primary"></i> 1. Wybierz lub zrób zdjęcie
+                </div>
+                <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+                    
+                    @if (!string.IsNullOrEmpty(base64Image))
+                    {
+                        <div class="position-relative mb-3 w-100" style="max-height: 300px; overflow: hidden; border-radius: 8px;">
+                            <img src="@base64Image" class="img-fluid border shadow-sm" alt="Podgląd przedmiotu" style="object-fit: contain; max-height: 300px;" />
+                            <button class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2" @onclick="ClearImage" title="Usuń zdjęcie">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-4 text-muted">
+                            <i class="bi bi-image display-1 text-secondary opacity-50"></i>
+                            <p class="mt-2">Brak załadowanego zdjęcia</p>
+                        </div>
+                    }
+
+                    <div class="w-100 mt-auto">
+                        <label class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-upload me-2"></i> Wybierz plik z urządzenia
+                            <InputFile OnChange="HandleFileSelected" accept="image/*" class="d-none" />
+                        </label>
+                        
+                        <button class="btn btn-success w-100" disabled="@(string.IsNullOrEmpty(base64Image) || isLoading)" @onclick="RecognizeImage">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span>Analizowanie AI...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-magic me-2"></i> <span>2. Rozpoznaj przedmiot</span>
+                            }
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm border-0 h-100 bg-light">
+                <div class="card-header bg-white fw-bold">
+                    <i class="bi bi-clipboard-data me-2 text-success"></i> 3. Wynik rozpoznawania
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center my-5 text-primary">
+                            <div class="spinner-grow" style="width: 3rem; height: 3rem;" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3 fw-bold animate__animated animate__pulse animate__infinite">Ollama LLaMA 3.2 przetwarza obraz...</p>
+                            <p class="small text-muted">To może potrwać od kilku do kilkunastu sekund zależnie od mocy serwera.</p>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger shadow-sm">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i> <strong>Błąd!</strong><br />
+                            <span class="small">@errorMessage</span>
+                        </div>
+                    }
+                    else if (recognizedItem != null)
+                    {
+                        <div class="alert alert-success shadow-sm border-success">
+                            <h4 class="alert-heading fw-bold mb-3"><i class="bi bi-check-circle-fill me-2"></i>Sukces!</h4>
+                            
+                            <div class="mb-2">
+                                <span class="text-muted small text-uppercase fw-bold d-block">Zaproponowana nazwa:</span>
+                                <span class="fs-5 fw-semibold text-dark">@recognizedItem.Name</span>
+                            </div>
+                            <hr />
+                            <div class="mb-2">
+                                <span class="text-muted small text-uppercase fw-bold d-block">Kategoria:</span>
+                                <span class="badge bg-primary fs-6">@recognizedItem.Category</span>
+                            </div>
+                            <hr />
+                            <div class="mb-2">
+                                <span class="text-muted small text-uppercase fw-bold d-block">Opis / Przeznaczenie:</span>
+                                <span class="text-dark">@recognizedItem.Purpose</span>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-4">
+                            <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i> W przyszłości dodamy tu możliwość natychmiastowego schowania tego przedmiotu do szafki.</p>
+                            <button class="btn btn-outline-secondary disabled"><i class="bi bi-box-arrow-in-right me-2"></i>Dodaj przedmiot do schowka</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted my-5">
+                            <i class="bi bi-robot display-1 text-secondary opacity-25"></i>
+                            <p class="mt-3">Tutaj pojawią się wyniki analizy Twojego przedmiotu.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string? base64Image;
+    private bool isLoading = false;
+    private string? errorMessage;
+    private RecognizedItemDto? recognizedItem;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        ClearImage();
+        var file = e.File;
+        
+        if (file != null)
+        {
+            try
+            {
+                // Ważne: Zmniejszamy obraz po stronie przeglądarki, żeby AI szybciej przetworzyło obraz i uniknąć błędu z limitem wielkości payloadu JSON.
+                var resizedFile = await file.RequestImageFileAsync("image/jpeg", 800, 800);
+                var buffer = new byte[resizedFile.Size];
+                
+                // maxAllowedSize: 5MB. Przy rozdzielczości 800x800 rzadko przekroczy kilkaset KB.
+                await resizedFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).ReadAsync(buffer);
+                
+                base64Image = $"data:image/jpeg;base64,{Convert.ToBase64String(buffer)}";
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Nie udało się przetworzyć pliku: {ex.Message}";
+            }
+        }
+    }
+
+    private void ClearImage()
+    {
+        base64Image = null;
+        recognizedItem = null;
+        errorMessage = null;
+    }
+
+    private async Task RecognizeImage()
+    {
+        if (string.IsNullOrEmpty(base64Image)) return;
+
+        isLoading = true;
+        errorMessage = null;
+        recognizedItem = null;
+
+        try
+        {
+            // Przekazujemy obraz w strukturze zgodnej z backendowym `ImageRecognitionRequest`
+            var request = new { Base64Image = base64Image };
+            
+            var response = await Http.PostAsJsonAsync("api/Recognition/recognize", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                recognizedItem = await response.Content.ReadFromJsonAsync<RecognizedItemDto>();
+            }
+            else
+            {
+                var errorText = await response.Content.ReadAsStringAsync();
+                errorMessage = $"Serwer odrzucił żądanie (Status: {response.StatusCode}): {errorText}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Wystąpił krytyczny błąd połączenia: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
